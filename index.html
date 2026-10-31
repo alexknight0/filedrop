@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>File drop</title>
+  <meta name="theme-color" content="#1f6feb">
+  <link rel="icon" href="icon.svg">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>File drop</h1>
+    <div id="account">
+      <span id="user-email"></span>
+      <button id="signin" type="button" hidden>Sign in with Google</button>
+      <button id="signout" type="button" class="small" hidden>Sign out</button>
+    </div>
+  </header>
+  <p id="status" role="status" aria-live="polite"></p>
+
+  <p id="signed-out-msg" class="empty" hidden>Sign in to see your files.</p>
+
+  <main id="app" hidden>
+    <label id="drop" class="drop">
+      <input id="picker" type="file" multiple>
+      <strong>Choose files to upload</strong>
+      <span class="hint">or drop / paste them anywhere on the page</span>
+    </label>
+    <p id="usage" class="muted"></p>
+    <ul id="files"></ul>
+    <p id="empty" class="empty" hidden>No files yet.</p>
+  </main>
+
+  <dialog id="preview">
+    <form method="dialog"><button class="close" aria-label="Close">✕</button></form>
+    <img id="preview-img" alt="">
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

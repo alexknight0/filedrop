@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only Alex's Google account may use the app at all.
+    function isOwner(uid) {
+      return request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.email == 'octopus0246@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    // users/{uid}/files/{id} (file info) and users/{uid}/files/{id}/chunks/{i} (file bytes).
+    match /users/{uid}/{document=**} {
+      allow read, write: if isOwner(uid);
+    }
+  }
+}
