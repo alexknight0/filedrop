@@ -322,11 +322,14 @@ function render() {
 
 // ---------- input: picker, drag and drop, paste ----------
 
-$("picker").addEventListener("change", (e) => {
-  const list = [...e.target.files];
-  e.target.value = "";
-  if (filesCol) uploadFiles(list);
-});
+// Photos, Camera and Files buttons (index.html) each wrap their own file input.
+for (const input of document.querySelectorAll("#drop input[type=file]")) {
+  input.addEventListener("change", (e) => {
+    const list = [...e.target.files];
+    e.target.value = "";
+    if (filesCol) uploadFiles(list);
+  });
+}
 
 let dragDepth = 0;
 document.addEventListener("dragenter", (e) => {

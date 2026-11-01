@@ -25,11 +25,17 @@
   <p id="signed-out-msg" class="empty" hidden>Sign in to see your files.</p>
 
   <main id="app" hidden>
-    <label id="drop" class="drop">
-      <input id="picker" type="file" multiple>
-      <strong>Choose files to upload</strong>
-      <span class="hint">or drop / paste them anywhere on the page</span>
-    </label>
+    <!-- Phones (coarse pointer) get one-tap Photos / Camera / Files buttons; with a mouse there's
+         just "Choose files". accept="image/*,video/*" opens Android's photo picker directly, and
+         capture opens the camera app directly. -->
+    <div id="drop" class="drop">
+      <div class="pick-row">
+        <label class="pick touch-only"><input type="file" accept="image/*,video/*" multiple>Photos</label>
+        <label class="pick touch-only"><input type="file" accept="image/*" capture="environment">Camera</label>
+        <label class="pick"><input id="picker" type="file" multiple><span class="touch-only">Files</span><span class="desk-only">Choose files to upload</span></label>
+      </div>
+      <span class="hint desk-only">or drop / paste them anywhere on the page</span>
+    </div>
     <p id="usage" class="muted"></p>
     <ul id="files"></ul>
     <p id="empty" class="empty" hidden>No files yet.</p>
