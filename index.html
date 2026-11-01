@@ -32,7 +32,11 @@
       <div class="pick-row">
         <label class="pick touch-only"><input type="file" accept="image/*,video/*" multiple>Photos</label>
         <label class="pick touch-only"><input type="file" accept="image/*" capture="environment">Camera</label>
-        <label class="pick"><input id="picker" type="file" multiple><span class="touch-only">Files</span><span class="desk-only">Choose files to upload</span></label>
+        <!-- accept="application/octet-stream": Chrome on Android then adds no Camera / Camera (video)
+             entries (it only does when images/video are accepted) and still allows any file type
+             (Chromium SelectFileDialog.java). Phone only; on a Mac it could filter the dialog. -->
+        <label class="pick touch-only"><input type="file" accept="application/octet-stream" multiple>Files</label>
+        <label class="pick desk-only"><input id="picker" type="file" multiple>Choose files to upload</label>
       </div>
       <span class="hint desk-only">or drop / paste them anywhere on the page</span>
     </div>
