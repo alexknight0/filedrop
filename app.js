@@ -331,6 +331,39 @@ for (const input of document.querySelectorAll("#drop input[type=file]")) {
   });
 }
 
+// Photos button: Alex prefers the Files app's own Photos section to Android's photo picker.
+// <input accept="image/*"> always opens the photo picker, but showOpenFilePicker (Chrome 132+ on
+// Android) launches the Files app directly (ACTION_OPEN_DOCUMENT, no chooser), filtered to these
+// types, and reopens in the folder last picked from for this `id`. If any type is unknown to
+// Android the filter is dropped, so keep to common ones. Falls back to the input if unsupported.
+const PHOTO_TYPES = {
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
+  "image/heic": [".heic"],
+  "image/webp": [".webp"],
+  "image/gif": [".gif"],
+  "video/mp4": [".mp4"],
+  "video/quicktime": [".mov"],
+  "video/webm": [".webm"],
+};
+$("photos-pick").addEventListener("click", async (e) => {
+  if (!("showOpenFilePicker" in window) || !filesCol) return;
+  e.preventDefault();
+  let handles;
+  try {
+    handles = await window.showOpenFilePicker({
+      id: "photos",
+      multiple: true,
+      excludeAcceptAllOption: true,
+      types: [{ description: "Photos and videos", accept: PHOTO_TYPES }],
+    });
+  } catch (err) {
+    if (err.name !== "AbortError") setStatus(`Couldn't open Files: ${err.message}`, true);
+    return;
+  }
+  uploadFiles(await Promise.all(handles.map((h) => h.getFile())));
+});
+
 let dragDepth = 0;
 document.addEventListener("dragenter", (e) => {
   if (!e.dataTransfer?.types.includes("Files")) return;
