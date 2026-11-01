@@ -146,3 +146,31 @@ progress { width: 100%; height: 0.4rem; margin-top: 0.3rem; accent-color: var(--
 #preview img { display: block; max-width: 95vw; max-height: 90vh; object-fit: contain; }
 #preview form { position: absolute; top: 0.5rem; right: 0.5rem; }
 #preview .close { background: rgb(0 0 0 / 0.6); color: white; border: none; }
+
+/* "Sent to you" / "Your files" headings, only shown when something has been sent to you. */
+h2 { font-size: 0.95rem; color: var(--muted); margin: 1rem 0 0.2rem; }
+#inbox { list-style: none; padding: 0; margin: 0; }
+
+/* Send / approve dialogs. */
+.sheet {
+  width: min(28rem, 92vw);
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  padding: 1rem;
+  color: inherit;
+  background: Canvas;
+}
+.sheet::backdrop { background: rgb(0 0 0 / 0.5); }
+.sheet h3 { margin: 0 0 0.3rem; overflow-wrap: anywhere; }
+.sheet form[method="dialog"] { display: flex; justify-content: flex-end; margin-top: 0.8rem; }
+.people { list-style: none; padding: 0; margin: 0.5rem 0 0; max-height: 50vh; overflow-y: auto; }
+.person { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+.admin-add { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+.admin-add input {
+  flex: 1; min-width: 0; font: inherit; padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line); border-radius: 0.5rem; background: transparent; color: inherit;
+}
+
+/* Discreet admin link at the bottom of the page. */
+.admin-row { text-align: center; margin-top: 2.5rem; }
+button.link { border: none; background: none; padding: 0.2rem; font-size: 0.8rem; color: var(--muted); text-decoration: underline; }

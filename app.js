@@ -1,17 +1,24 @@
 // File drop: upload files on one device, download them on another.
 // Google sign-in (Firebase Auth) + Firestore. Firebase Storage needs billing, so the file
 // bytes are split into chunks of up to 1 MB, each stored as a Bytes field in its own doc.
-// Data (owner-only, see firestore.rules):
-//   users/{uid}/files/{id}             { name, type, size, chunks, createdAt (ms), from, done, thumb? }
+// Only approved Google accounts can use it (see firestore.rules). Data:
+//   config/access                      { emails: [...] }  approved accounts besides the admin; admin-only
+//   profiles/{uid}                     { email, name, seenAt }  written on sign-in; the "Send to" list
+//   users/{uid}/files/{id}             { name, type, size, chunks, createdAt (ms), from, done, thumb?,
+//                                        sharedWith?: [uid] }  people it was sent to may read it
 //   users/{uid}/files/{id}/chunks/{i}  { d: Bytes }   i = "00000", "00001", …
+//   users/{uid}/inbox/{sender}_{fileId} { owner, fileId, name, type, size, chunks, thumb, fromName,
+//                                        fromEmail, sharedAt }  a link to someone else's file
 // `done` is false while the upload is still running (or if it was interrupted).
+// Sending links rather than copies: no extra storage, but the sender deleting the file removes it
+// for everyone (deleteFile also deletes the recipients' inbox entries).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
 import {
   getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
 } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js";
 import {
-  getFirestore, collection, doc, query, orderBy, onSnapshot, setDoc, updateDoc, getDoc, deleteDoc,
-  Bytes,
+  getFirestore, collection, doc, query, orderBy, onSnapshot, setDoc, updateDoc, getDoc, getDocs,
+  deleteDoc, arrayUnion, arrayRemove, Bytes,
 } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js";
 import { VERSION } from "./version.js";
 
@@ -23,9 +30,10 @@ const FIREBASE_CONFIG = {
   appId: "1:463136665514:web:55272c1996c2d285edc5d3",
 };
 
+const ADMIN_EMAIL = "octopus0246@gmail.com"; // also hard-coded in firestore.rules
 const CHUNK_BYTES = 1_000_000; // Firestore docs are capped at 1 MiB (1,048,576 bytes incl. names)
 const PARALLEL = 4; // chunk reads/writes in flight at once
-const QUOTA_BYTES = 1024 ** 3; // free (Spark) plan: 1 GiB of Firestore storage in total
+const QUOTA_BYTES = 1024 ** 3; // free (Spark) plan: 1 GiB of Firestore storage, shared by everyone
 const THUMB_SIDE = 160;
 const SHARE_CACHE = "filedrop-share"; // filled by sw.js when a file is shared from another app
 // The Async Clipboard API only takes PNG images and plain text (Chrome), so only those can be copied.
@@ -38,11 +46,15 @@ const db = getFirestore(app);
 
 const $ = (id) => document.getElementById(id);
 
+let me = null; // signed-in, approved user
 let filesCol = null;
-let unsub = null;
-let files = []; // [{id, ...data}], newest first
-const active = new Map(); // id -> {label, done, total} for uploads/downloads running on this device
-const blobs = new Map(); // id -> Blob, files already downloaded this session
+let unsubs = [];
+// Each item: {key, ref (file doc), ...data}. Own files have key = id; received ones have
+// key = "in:" + inbox id, inbox: true, and ref pointing at the sender's file.
+let files = []; // newest first
+let inbox = [];
+const active = new Map(); // key -> {label, done, total} for jobs running on this device
+const blobs = new Map(); // key -> Blob, files already downloaded this session
 
 // ---------- helpers ----------
 
@@ -79,7 +91,7 @@ function deviceName() {
   return "Linux";
 }
 
-const chunkRef = (id, i) => doc(filesCol, id, "chunks", String(i).padStart(5, "0"));
+const chunkRef = (fileRef, i) => doc(fileRef, "chunks", String(i).padStart(5, "0"));
 
 // Runs fn(0..count-1) with at most `limit` calls in flight.
 async function pool(limit, count, fn) {
@@ -139,7 +151,7 @@ async function uploadFile(file) {
     await pool(PARALLEL, chunks, async (i) => {
       const part = file.slice(i * CHUNK_BYTES, (i + 1) * CHUNK_BYTES);
       const bytes = new Uint8Array(await part.arrayBuffer());
-      await setDoc(chunkRef(ref.id, i), { d: Bytes.fromUint8Array(bytes) });
+      await setDoc(chunkRef(ref, i), { d: Bytes.fromUint8Array(bytes) });
       job.done += bytes.length;
       render();
     });
@@ -155,24 +167,28 @@ async function uploadFile(file) {
 }
 
 async function fetchBlob(f) {
-  if (blobs.has(f.id)) return blobs.get(f.id);
+  if (blobs.has(f.key)) return blobs.get(f.key);
   const job = { label: "Downloading", done: 0, total: f.size };
-  active.set(f.id, job);
+  active.set(f.key, job);
   render();
   try {
     const parts = new Array(f.chunks);
     await pool(PARALLEL, f.chunks, async (i) => {
-      const snap = await getDoc(chunkRef(f.id, i));
+      const snap = await getDoc(chunkRef(f.ref, i));
       if (!snap.exists()) throw new Error(`part ${i + 1} of ${f.chunks} is missing`);
       parts[i] = snap.get("d").toUint8Array();
       job.done += parts[i].length;
       render();
     });
     const blob = new Blob(parts, { type: f.type });
-    blobs.set(f.id, blob);
+    blobs.set(f.key, blob);
     return blob;
+  } catch (err) {
+    // Rules deny reads once the sender deletes the file (no doc = no sharedWith).
+    if (f.inbox && err.code === "permission-denied") throw new Error("the sender has deleted it");
+    throw err;
   } finally {
-    active.delete(f.id);
+    active.delete(f.key);
     render();
   }
 }
@@ -240,28 +256,162 @@ function copyFile(f) {
 }
 
 async function deleteFile(f) {
-  if (!confirm(`Delete ${f.name}?`)) return;
+  if (f.inbox) return removeReceived(f);
+  const shared = f.sharedWith?.length ? ` It will also disappear for the ${f.sharedWith.length === 1 ? "person" : `${f.sharedWith.length} people`} you sent it to.` : "";
+  if (!confirm(`Delete ${f.name}?${shared}`)) return;
   const job = { label: "Deleting", done: 0, total: f.size };
-  active.set(f.id, job);
+  active.set(f.key, job);
   render();
   try {
+    // Recipients' links first, so nobody is left with an entry that can't be downloaded.
+    await Promise.all((f.sharedWith ?? []).map((uid) => deleteDoc(doc(db, "users", uid, "inbox", `${me.uid}_${f.id}`))));
     // One delete per chunk: a write batch is capped at 10 MiB *including the size of deleted
     // docs*, so batching 1 MB chunks fails for files over ~10 MB ("Transaction too big").
     // Chunks first, the file doc last, so a failure part-way still leaves a deletable entry.
     await pool(PARALLEL * 2, f.chunks, async (i) => {
-      await deleteDoc(chunkRef(f.id, i));
+      await deleteDoc(chunkRef(f.ref, i));
       job.done = Math.min(f.size, job.done + CHUNK_BYTES);
       render();
     });
-    await deleteDoc(doc(filesCol, f.id));
-    blobs.delete(f.id);
+    await deleteDoc(f.ref);
+    blobs.delete(f.key);
   } catch (err) {
     setStatus(`Couldn't delete ${f.name}: ${err.message}`, true);
   } finally {
-    active.delete(f.id);
+    active.delete(f.key);
     render();
   }
 }
+
+async function removeReceived(f) {
+  if (!confirm(`Remove ${f.name} from your list? ${f.fromName} keeps their copy.`)) return;
+  try {
+    await deleteDoc(doc(db, "users", me.uid, "inbox", f.id));
+    blobs.delete(f.key);
+  } catch (err) {
+    setStatus(`Couldn't remove ${f.name}: ${err.message}`, true);
+  }
+}
+
+// ---------- sending to other people ----------
+
+let sendTarget = null; // the file the Send dialog is for
+let profiles = []; // other approved users who have signed in, [{uid, email, name}]
+
+async function openSend(f) {
+  sendTarget = f;
+  $("send-title").textContent = `Send ${f.name} to…`;
+  $("send-list").replaceChildren(el("li", { className: "muted", textContent: "Loading…" }));
+  $("send-dialog").showModal();
+  try {
+    const snap = await getDocs(collection(db, "profiles"));
+    profiles = snap.docs.map((d) => ({ uid: d.id, ...d.data() })).filter((p) => p.uid !== me.uid)
+      .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
+    renderSendList();
+  } catch (err) {
+    $("send-list").replaceChildren(el("li", { className: "meta error", textContent: `Couldn't load people: ${err.message}` }));
+  }
+}
+
+function renderSendList() {
+  const f = sendTarget;
+  if (!profiles.length) {
+    $("send-list").replaceChildren(el("li", { className: "muted",
+      textContent: "Nobody else has signed in yet. People appear here after their first sign-in." }));
+    return;
+  }
+  $("send-list").replaceChildren(...profiles.map((p) => {
+    const sent = f.sharedWith?.includes(p.uid);
+    const who = el("div", { className: "info" }, el("div", { className: "name", textContent: p.name || p.email }),
+      p.name ? el("div", { className: "meta", textContent: p.email }) : null);
+    const btn = sent
+      ? button("Unsend", () => unsendFile(f, p))
+      : button("Send", () => sendFile(f, p), "small primary");
+    return el("li", { className: "person" }, who, sent ? el("span", { className: "meta", textContent: "Sent ✓" }) : null, btn);
+  }));
+}
+
+async function sendFile(f, p) {
+  try {
+    await updateDoc(f.ref, { sharedWith: arrayUnion(p.uid) }); // grants read access first
+    await setDoc(doc(db, "users", p.uid, "inbox", `${me.uid}_${f.id}`), {
+      owner: me.uid, fileId: f.id, name: f.name, type: f.type, size: f.size, chunks: f.chunks,
+      thumb: f.thumb ?? null, fromName: me.displayName || me.email, fromEmail: me.email, sharedAt: Date.now(),
+    });
+    setStatus(`Sent ${f.name} to ${p.name || p.email}.`);
+  } catch (err) {
+    setStatus(`Couldn't send ${f.name}: ${err.message}`, true);
+  }
+  sendTarget = { ...f, sharedWith: [...(f.sharedWith ?? []), p.uid] };
+  renderSendList();
+}
+
+async function unsendFile(f, p) {
+  try {
+    await deleteDoc(doc(db, "users", p.uid, "inbox", `${me.uid}_${f.id}`));
+    await updateDoc(f.ref, { sharedWith: arrayRemove(p.uid) });
+    setStatus(`${p.name || p.email} no longer has ${f.name}.`);
+  } catch (err) {
+    setStatus(`Couldn't unsend ${f.name}: ${err.message}`, true);
+  }
+  sendTarget = { ...f, sharedWith: (f.sharedWith ?? []).filter((u) => u !== p.uid) };
+  renderSendList();
+}
+
+// ---------- approving new users (admin only) ----------
+
+const accessRef = () => doc(db, "config", "access");
+
+async function openAdmin() {
+  $("admin-dialog").showModal();
+  await renderAdmin();
+  $("admin-email").focus();
+}
+
+async function renderAdmin() {
+  $("admin-list").replaceChildren(el("li", { className: "muted", textContent: "Loading…" }));
+  try {
+    const [access, people] = await Promise.all([getDoc(accessRef()), getDocs(collection(db, "profiles"))]);
+    const seen = new Set(people.docs.map((d) => d.get("email")));
+    const emails = (access.exists() ? access.get("emails") : []) ?? [];
+    $("admin-list").replaceChildren(...(emails.length ? emails.map((e) => el("li", { className: "person" },
+      el("div", { className: "info" }, el("div", { className: "name", textContent: e }),
+        el("div", { className: "meta", textContent: seen.has(e) ? "has signed in" : "hasn't signed in yet" })),
+      button("Remove", () => removeApproved(e), "small del"))) : [el("li", { className: "muted", textContent: "No one else approved yet." })]));
+  } catch (err) {
+    $("admin-list").replaceChildren(el("li", { className: "meta error", textContent: err.message }));
+  }
+}
+
+async function addApproved(e) {
+  e.preventDefault();
+  const email = $("admin-email").value.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    $("admin-msg").textContent = "That doesn't look like an email address.";
+    return;
+  }
+  try {
+    await setDoc(accessRef(), { emails: arrayUnion(email) }, { merge: true });
+    $("admin-email").value = "";
+    $("admin-msg").textContent = `Approved ${email}. They can sign in at ${location.origin}${location.pathname}`;
+  } catch (err) {
+    $("admin-msg").textContent = `Couldn't approve: ${err.message}`;
+  }
+  renderAdmin();
+}
+
+async function removeApproved(email) {
+  if (!confirm(`Remove ${email}? They won't be able to use File drop any more. Their files stay stored until deleted.`)) return;
+  try {
+    await setDoc(accessRef(), { emails: arrayRemove(email) }, { merge: true });
+  } catch (err) {
+    $("admin-msg").textContent = `Couldn't remove: ${err.message}`;
+  }
+  renderAdmin();
+}
+
+$("admin-open").onclick = openAdmin;
+$("admin-form").onsubmit = addApproved;
 
 // ---------- rendering ----------
 
@@ -276,7 +426,7 @@ function button(text, onclick, className = "small") {
 }
 
 function renderFile(f) {
-  const job = active.get(f.id);
+  const job = active.get(f.key);
   const image = isImage(f);
   const ext = (f.name.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "file");
 
@@ -290,8 +440,11 @@ function renderFile(f) {
     meta = el("div", { className: "meta", textContent: `${job.label}… ${formatSize(job.done)} of ${formatSize(job.total)}` });
   } else if (!f.done) {
     meta = el("div", { className: "meta error", textContent: `Upload from ${f.from} not finished (still running there, or interrupted)` });
+  } else if (f.inbox) {
+    meta = el("div", { className: "meta", textContent: `${formatSize(f.size)} · from ${f.fromName} · ${relative(f.sharedAt)}` });
   } else {
-    meta = el("div", { className: "meta", textContent: `${formatSize(f.size)} · from ${f.from} · ${relative(f.createdAt)}` });
+    const sent = f.sharedWith?.length ? ` · sent to ${f.sharedWith.length}` : "";
+    meta = el("div", { className: "meta", textContent: `${formatSize(f.size)} · from ${f.from} · ${relative(f.createdAt)}${sent}` });
   }
   const bar = job ? el("progress", { max: job.total || 1, value: job.done }) : null;
 
@@ -300,8 +453,9 @@ function renderFile(f) {
     actions.append(button("Download", () => withBlob(f, "download", (b) => saveBlob(f, b)), "small primary"));
     if (canCopy(f)) actions.append(button("Copy", () => copyFile(f)));
     if (canShareFiles()) actions.append(button("Share", () => withBlob(f, "share", (b) => shareBlob(f, b))));
+    if (!f.inbox) actions.append(button("Send", () => openSend(f)));
   }
-  if (!job) actions.append(button("Delete", () => deleteFile(f), "small del"));
+  if (!job) actions.append(button(f.inbox ? "Remove" : "Delete", () => deleteFile(f), "small del"));
 
   return el("li", { className: "file" }, thumb, el("div", { className: "info" },
     el("div", { className: "name", textContent: f.name }), meta, bar), actions);
@@ -315,8 +469,10 @@ function render() {
   requestAnimationFrame(() => {
     renderQueued = false;
     $("files").replaceChildren(...files.map(renderFile));
+    $("inbox").replaceChildren(...inbox.map(renderFile));
+    $("inbox-section").hidden = inbox.length === 0;
     $("empty").hidden = files.length > 0;
-    $("usage").textContent = `${formatSize(usedBytes())} of 1 GB free storage used`;
+    $("usage").textContent = `You're using ${formatSize(usedBytes())} of the 1 GB free storage`;
   });
 }
 
@@ -401,30 +557,58 @@ $("signin").onclick = () =>
   signInWithPopup(auth, new GoogleAuthProvider()).catch((err) => setStatus(`Sign-in failed: ${err.message}`, true));
 $("signout").onclick = () => signOut(auth);
 
-onAuthStateChanged(auth, (user) => {
-  unsub?.();
-  unsub = null;
-  files = [];
-  blobs.clear();
+function showSignedIn(user, approved) {
   $("signin").hidden = !!user;
   $("signout").hidden = !user;
   $("user-email").textContent = user?.email ?? "";
-  $("app").hidden = !user;
+  $("app").hidden = !approved;
   $("signed-out-msg").hidden = !!user;
+  $("not-approved").hidden = true; // shown only once the approval check fails
+  $("admin-open").hidden = !approved || user.email.toLowerCase() !== ADMIN_EMAIL;
+}
+
+onAuthStateChanged(auth, async (user) => {
+  unsubs.forEach((u) => u());
+  unsubs = [];
+  me = null;
+  filesCol = null;
+  files = [];
+  inbox = [];
+  blobs.clear();
   setStatus("");
+  showSignedIn(user, false);
   if (!user) {
-    filesCol = null;
     // Shared while signed out: the files wait in the share cache until sign-in.
     if (new URLSearchParams(location.search).has("shared")) setStatus("Sign in to upload the shared files.");
     return;
   }
+  // Writing the profile doubles as the approval check: the rules only allow approved accounts.
+  try {
+    await setDoc(doc(db, "profiles", user.uid), {
+      email: user.email.toLowerCase(), name: user.displayName || "", seenAt: Date.now(),
+    });
+  } catch (err) {
+    if (err.code !== "permission-denied") setStatus(`Couldn't sign in: ${err.message}`, true);
+    $("not-approved-email").textContent = user.email;
+    $("not-approved").hidden = false;
+    return;
+  }
+  if (auth.currentUser?.uid !== user.uid) return; // signed out/switched while waiting
+  me = user;
+  showSignedIn(user, true);
   filesCol = collection(db, "users", user.uid, "files");
   let first = true;
-  unsub = onSnapshot(
+  unsubs.push(onSnapshot(
     query(filesCol, orderBy("createdAt", "desc")),
     (snap) => {
-      files = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      files = snap.docs.map((d) => ({ key: d.id, id: d.id, ref: d.ref, ...d.data() }));
       render();
+      // Keep the Send dialog's "Sent ✓" marks in step with the file's sharedWith.
+      const open = sendTarget && $("send-dialog").open && files.find((x) => x.key === sendTarget.key);
+      if (open) {
+        sendTarget = open;
+        if (profiles.length) renderSendList();
+      }
       // Upload anything shared from another app, once the file list (for the quota check) is known.
       if (first) {
         first = false;
@@ -432,7 +616,19 @@ onAuthStateChanged(auth, (user) => {
       }
     },
     (err) => setStatus(`Couldn't load files: ${err.message}`, true),
-  );
+  ));
+  unsubs.push(onSnapshot(
+    query(collection(db, "users", user.uid, "inbox"), orderBy("sharedAt", "desc")),
+    (snap) => {
+      inbox = snap.docs.map((d) => {
+        const data = d.data();
+        return { key: `in:${d.id}`, id: d.id, inbox: true, done: true,
+          ref: doc(db, "users", data.owner, "files", data.fileId), ...data };
+      });
+      render();
+    },
+    (err) => setStatus(`Couldn't load files sent to you: ${err.message}`, true),
+  ));
 });
 
 // ---------- version check ----------

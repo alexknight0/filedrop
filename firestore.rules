@@ -1,17 +1,58 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only Alex's Google account may use the app at all.
-    function isOwner(uid) {
-      return request.auth != null
-        && request.auth.uid == uid
-        && request.auth.token.email == 'octopus0246@gmail.com'
-        && request.auth.token.email_verified == true;
+    // Alex (the admin) is always approved; everyone else must be in config/access.emails
+    // (lower-case), which only Alex can read or edit.
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function email() {
+      return request.auth.token.email.lower();
+    }
+    function isAdmin() {
+      return signedIn() && email() == 'octopus0246@gmail.com';
+    }
+    function approved() {
+      return isAdmin() || (signedIn()
+        && exists(/databases/$(database)/documents/config/access)
+        && email() in get(/databases/$(database)/documents/config/access).data.emails);
+    }
+    function isMe(uid) {
+      return approved() && request.auth.uid == uid;
     }
 
-    // users/{uid}/files/{id} (file info) and users/{uid}/files/{id}/chunks/{i} (file bytes).
+    match /config/access {
+      allow read, write: if isAdmin();
+    }
+
+    // {email, name, seenAt}; each user writes their own. Approved users can list everyone
+    // (the "Send to…" list).
+    match /profiles/{uid} {
+      allow read: if approved();
+      allow write: if isMe(uid);
+    }
+
+    // Everything under a user's own folder: files, chunks, inbox.
     match /users/{uid}/{document=**} {
-      allow read, write: if isOwner(uid);
+      allow read, write: if isMe(uid);
+    }
+
+    // A file sent to someone (their uid in sharedWith) can be read by them, chunks included.
+    match /users/{uid}/files/{fileId} {
+      allow read: if approved() && request.auth.uid in resource.data.get('sharedWith', []);
+      match /chunks/{chunk} {
+        allow read: if approved() && request.auth.uid in
+          get(/databases/$(database)/documents/users/$(uid)/files/$(fileId)).data.get('sharedWith', []);
+      }
+    }
+
+    // users/{recipient}/inbox/{senderUid}_{fileId}: written by the sender, who may also delete it
+    // (when they delete the file). The recipient reads/deletes it through the rule above.
+    match /users/{uid}/inbox/{id} {
+      allow create, update: if approved()
+        && request.resource.data.owner == request.auth.uid
+        && id == request.auth.uid + '_' + request.resource.data.fileId;
+      allow delete: if approved() && resource.data.owner == request.auth.uid;
     }
   }
 }

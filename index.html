@@ -23,6 +23,7 @@
   <p id="status" role="status" aria-live="polite"></p>
 
   <p id="signed-out-msg" class="empty" hidden>Sign in to see your files.</p>
+  <p id="not-approved" class="empty" hidden><span id="not-approved-email"></span> isn't approved for File drop yet. Ask Alex to add it, then sign in again.</p>
 
   <main id="app" hidden>
     <!-- Phones (coarse pointer) get one-tap Photos / Camera / Files buttons; with a mouse there's
@@ -41,9 +42,35 @@
       <span class="hint desk-only">or drop / paste them anywhere on the page</span>
     </div>
     <p id="usage" class="muted"></p>
+    <section id="inbox-section" hidden>
+      <h2>Sent to you</h2>
+      <ul id="inbox"></ul>
+      <h2>Your files</h2>
+    </section>
     <ul id="files"></ul>
     <p id="empty" class="empty" hidden>No files yet.</p>
+    <!-- Admin only, rarely used, so deliberately low-key. -->
+    <p class="admin-row"><button id="admin-open" type="button" class="link" hidden>Approve new users</button></p>
   </main>
+
+  <dialog id="send-dialog" class="sheet">
+    <h3 id="send-title">Send to…</h3>
+    <p class="muted">They'll see it in their File drop. If you delete it, it disappears for them too.</p>
+    <ul id="send-list" class="people"></ul>
+    <form method="dialog"><button class="small">Done</button></form>
+  </dialog>
+
+  <dialog id="admin-dialog" class="sheet">
+    <h3>Approve new users</h3>
+    <p class="muted">Gmail addresses that may sign in. Everyone shares the 1 GB free storage.</p>
+    <form id="admin-form" class="admin-add">
+      <input id="admin-email" type="email" placeholder="name@gmail.com" autocomplete="off" autocapitalize="off" required>
+      <button class="small primary">Approve</button>
+    </form>
+    <p id="admin-msg" class="muted"></p>
+    <ul id="admin-list" class="people"></ul>
+    <form method="dialog"><button class="small">Done</button></form>
+  </dialog>
 
   <dialog id="preview">
     <form method="dialog"><button class="close" aria-label="Close">✕</button></form>
