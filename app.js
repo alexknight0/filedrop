@@ -13,6 +13,7 @@ import {
   getFirestore, collection, doc, query, orderBy, onSnapshot, setDoc, updateDoc, getDoc,
   writeBatch, Bytes,
 } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js";
+import { VERSION } from "./version.js";
 
 // Public web-app config (not a secret; access is controlled by firestore.rules).
 const FIREBASE_CONFIG = {
@@ -425,3 +426,75 @@ onAuthStateChanged(auth, (user) => {
     (err) => setStatus(`Couldn't load files: ${err.message}`, true),
   );
 });
+
+// ---------- version check ----------
+// GitHub Pages lets browsers cache files for 10 minutes, so after a deploy this device may run
+// a stale copy. version.js is stamped by tools/pre-commit on every commit; compare the running
+// VERSION with the live file. Keep APP_FILES complete so Update refreshes every cached file.
+const APP_FILES = ["./", "index.html", "app.js", "version.js", "style.css", "manifest.webmanifest"];
+const VERSION_CHECK_MS = 5 * 60_000;
+const versionBtn = $("version");
+let latestVersion = null;
+
+function formatVersion(v) {
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? v : d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}
+
+function setVersionState(state) {
+  const labels = {
+    checking: "Checking for updates…",
+    ok: `Up to date (version ${formatVersion(VERSION)})`,
+    stale: `Update available: running ${formatVersion(VERSION)}, latest is ${formatVersion(latestVersion)}. Tap to update.`,
+    unknown: `Couldn't check for updates (offline?). Running ${formatVersion(VERSION)}.`,
+    updating: "Updating…",
+  };
+  versionBtn.dataset.state = state;
+  versionBtn.title = labels[state];
+  versionBtn.setAttribute("aria-label", labels[state]);
+  versionBtn.querySelector("span").textContent = state === "stale" ? "Update" : "";
+}
+
+async function checkVersion() {
+  try {
+    const res = await fetch(`version.js?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    latestVersion = (await res.text()).match(/VERSION = "([^"]+)"/)?.[1];
+    if (!latestVersion) throw new Error("no version");
+    // ISO timestamps compare as strings; only a newer live copy counts as an update.
+    setVersionState(latestVersion > VERSION ? "stale" : "ok");
+  } catch {
+    setVersionState("unknown");
+  }
+}
+
+versionBtn.addEventListener("click", async () => {
+  const state = versionBtn.dataset.state;
+  if (state === "checking" || state === "updating") return;
+  if (state !== "stale") {
+    // Green or grey: check again now and report the result.
+    setVersionState("checking");
+    setStatus(versionBtn.title);
+    await checkVersion();
+    setStatus(versionBtn.title);
+    return;
+  }
+  if ([...active.values()].some((j) => j.label === "Uploading")) {
+    setStatus("Wait for the upload to finish, then tap Update.");
+    return;
+  }
+  setVersionState("updating");
+  // Refresh every file in the HTTP cache first; a plain reload could still use the stale copies.
+  // sw.js caches nothing but shared files, so it only needs its own update check.
+  await Promise.all([
+    ...APP_FILES.map((f) => fetch(f, { cache: "reload" }).catch(() => {})),
+    navigator.serviceWorker?.getRegistration().then((r) => r?.update()).catch(() => {}),
+  ]);
+  location.reload();
+});
+
+setVersionState("checking");
+checkVersion();
+setInterval(checkVersion, VERSION_CHECK_MS);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
+window.addEventListener("online", checkVersion);
