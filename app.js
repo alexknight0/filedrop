@@ -2,7 +2,8 @@
 // Google sign-in (Firebase Auth) + Firestore. Firebase Storage needs billing, so the file
 // bytes are split into chunks of up to 1 MB, each stored as a Bytes field in its own doc.
 // Only approved Google accounts can use it (see firestore.rules). Data:
-//   config/access                      { emails: [...] }  approved accounts besides the admin; admin-only
+//   config/access                      { emails: [...] }  approved accounts besides the admin; admin-only,
+//                                      edited from the home page (alexknight0.github.io/home/)
 //   profiles/{uid}                     { email, name, seenAt }  written on sign-in; the "Send to" list
 //   users/{uid}/files/{id}             { name, type, size, chunks, createdAt (ms), from, done, thumb?,
 //                                        sharedWith?: [uid] }  people it was sent to may read it
@@ -30,7 +31,6 @@ const FIREBASE_CONFIG = {
   appId: "1:463136665514:web:55272c1996c2d285edc5d3",
 };
 
-const ADMIN_EMAIL = "octopus0246@gmail.com"; // also hard-coded in firestore.rules
 const CHUNK_BYTES = 1_000_000; // Firestore docs are capped at 1 MiB (1,048,576 bytes incl. names)
 const PARALLEL = 4; // chunk reads/writes in flight at once
 const QUOTA_BYTES = 1024 ** 3; // free (Spark) plan: 1 GiB of Firestore storage, shared by everyone
@@ -358,61 +358,6 @@ async function unsendFile(f, p) {
   renderSendList();
 }
 
-// ---------- approving new users (admin only) ----------
-
-const accessRef = () => doc(db, "config", "access");
-
-async function openAdmin() {
-  $("admin-dialog").showModal();
-  await renderAdmin();
-  $("admin-email").focus();
-}
-
-async function renderAdmin() {
-  $("admin-list").replaceChildren(el("li", { className: "muted", textContent: "Loading…" }));
-  try {
-    const [access, people] = await Promise.all([getDoc(accessRef()), getDocs(collection(db, "profiles"))]);
-    const seen = new Set(people.docs.map((d) => d.get("email")));
-    const emails = (access.exists() ? access.get("emails") : []) ?? [];
-    $("admin-list").replaceChildren(...(emails.length ? emails.map((e) => el("li", { className: "person" },
-      el("div", { className: "info" }, el("div", { className: "name", textContent: e }),
-        el("div", { className: "meta", textContent: seen.has(e) ? "has signed in" : "hasn't signed in yet" })),
-      button("Remove", () => removeApproved(e), "small del"))) : [el("li", { className: "muted", textContent: "No one else approved yet." })]));
-  } catch (err) {
-    $("admin-list").replaceChildren(el("li", { className: "meta error", textContent: err.message }));
-  }
-}
-
-async function addApproved(e) {
-  e.preventDefault();
-  const email = $("admin-email").value.trim().toLowerCase();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    $("admin-msg").textContent = "That doesn't look like an email address.";
-    return;
-  }
-  try {
-    await setDoc(accessRef(), { emails: arrayUnion(email) }, { merge: true });
-    $("admin-email").value = "";
-    $("admin-msg").textContent = `Approved ${email}. They can sign in at ${location.origin}${location.pathname}`;
-  } catch (err) {
-    $("admin-msg").textContent = `Couldn't approve: ${err.message}`;
-  }
-  renderAdmin();
-}
-
-async function removeApproved(email) {
-  if (!confirm(`Remove ${email}? They won't be able to use File drop any more. Their files stay stored until deleted.`)) return;
-  try {
-    await setDoc(accessRef(), { emails: arrayRemove(email) }, { merge: true });
-  } catch (err) {
-    $("admin-msg").textContent = `Couldn't remove: ${err.message}`;
-  }
-  renderAdmin();
-}
-
-$("admin-open").onclick = openAdmin;
-$("admin-form").onsubmit = addApproved;
-
 // ---------- rendering ----------
 
 function el(tag, props = {}, ...children) {
@@ -564,7 +509,6 @@ function showSignedIn(user, approved) {
   $("app").hidden = !approved;
   $("signed-out-msg").hidden = !!user;
   $("not-approved").hidden = true; // shown only once the approval check fails
-  $("admin-open").hidden = !approved || user.email.toLowerCase() !== ADMIN_EMAIL;
 }
 
 onAuthStateChanged(auth, async (user) => {
