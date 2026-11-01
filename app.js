@@ -27,6 +27,9 @@ const PARALLEL = 4; // chunk reads/writes in flight at once
 const QUOTA_BYTES = 1024 ** 3; // free (Spark) plan: 1 GiB of Firestore storage in total
 const THUMB_SIDE = 160;
 const DELETE_BATCH = 400; // a write batch holds at most 500 operations
+const SHARE_CACHE = "filedrop-share"; // filled by sw.js when a file is shared from another app
+// The Async Clipboard API only takes PNG images and plain text (Chrome), so only those can be copied.
+const TEXT_TYPE = /^text\/|^application\/(json|xml|javascript|x-sh)$/;
 
 const app = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
@@ -205,6 +208,37 @@ function previewBlob(blob) {
   $("preview").showModal();
 }
 
+const isImage = (f) => !!f.type?.startsWith("image/");
+const isText = (f) => TEXT_TYPE.test(f.type ?? "");
+const canCopy = (f) => !!navigator.clipboard?.write && "ClipboardItem" in window && (isImage(f) || isText(f));
+
+async function toPng(blob) {
+  if (blob.type === "image/png") return blob;
+  let bmp;
+  try {
+    bmp = await createImageBitmap(blob);
+  } catch {
+    throw new Error("this browser can't read that image format");
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = bmp.width;
+  canvas.height = bmp.height;
+  canvas.getContext("2d").drawImage(bmp, 0, 0);
+  bmp.close();
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
+
+function copyFile(f) {
+  // write() must be called inside the click, so hand ClipboardItem a promise for the data
+  // instead of awaiting the download first (the click's permission would expire).
+  const type = isImage(f) ? "image/png" : "text/plain";
+  const data = fetchBlob(f).then((b) => (isImage(f) ? toPng(b) : new Blob([b], { type })));
+  navigator.clipboard.write([new ClipboardItem({ [type]: data })]).then(
+    () => setStatus(`Copied ${f.name}${isImage(f) ? " (as an image)" : ""}.`),
+    (err) => setStatus(`Couldn't copy ${f.name}: ${err.message}`, true),
+  );
+}
+
 async function deleteFile(f) {
   if (!confirm(`Delete ${f.name}?`)) return;
   try {
@@ -237,13 +271,13 @@ function button(text, onclick, className = "small") {
 
 function renderFile(f) {
   const job = active.get(f.id);
-  const isImage = f.type?.startsWith("image/");
+  const image = isImage(f);
   const ext = (f.name.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "file");
 
-  const thumb = el("button", { type: "button", className: "thumb", title: isImage ? "Preview" : "Download" },
+  const thumb = el("button", { type: "button", className: "thumb", title: image ? "Preview" : "Download" },
     f.thumb ? el("img", { src: f.thumb, alt: "" }) : ext);
   thumb.disabled = !f.done || !!job;
-  thumb.onclick = () => withBlob(f, isImage ? "open" : "download", (b) => (isImage ? previewBlob(b) : saveBlob(f, b)));
+  thumb.onclick = () => withBlob(f, image ? "open" : "download", (b) => (image ? previewBlob(b) : saveBlob(f, b)));
 
   let meta;
   if (job) {
@@ -258,6 +292,7 @@ function renderFile(f) {
   const actions = el("div", { className: "actions" });
   if (f.done && !job) {
     actions.append(button("Download", () => withBlob(f, "download", (b) => saveBlob(f, b)), "small primary"));
+    if (canCopy(f)) actions.append(button("Copy", () => copyFile(f)));
     if (canShareFiles()) actions.append(button("Share", () => withBlob(f, "share", (b) => shareBlob(f, b))));
   }
   if (!job) actions.append(button("Delete", () => deleteFile(f), "small del"));
@@ -323,6 +358,34 @@ window.addEventListener("beforeunload", (e) => {
 // Keep "5 min ago" labels fresh.
 setInterval(render, 60_000);
 
+// ---------- files shared from other apps (share_target, see sw.js) ----------
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch((err) => console.warn("service worker:", err));
+}
+
+let takingShared = false;
+async function takeShared() {
+  if (takingShared || !("caches" in window)) return;
+  takingShared = true;
+  try {
+    const cache = await caches.open(SHARE_CACHE);
+    const keys = await cache.keys();
+    const list = [];
+    for (const key of keys) {
+      const res = await cache.match(key);
+      const name = decodeURIComponent(res.headers.get("X-Name") || "shared%20file");
+      list.push(new File([await res.blob()], name, { type: res.headers.get("Content-Type") || "" }));
+      await cache.delete(key);
+    }
+    if (location.search) history.replaceState(null, "", location.pathname + location.hash);
+    if (list.length) await uploadFiles(list);
+  } finally {
+    takingShared = false;
+  }
+}
+
+
 // ---------- auth ----------
 
 $("signin").onclick = () =>
@@ -342,14 +405,22 @@ onAuthStateChanged(auth, (user) => {
   setStatus("");
   if (!user) {
     filesCol = null;
+    // Shared while signed out: the files wait in the share cache until sign-in.
+    if (new URLSearchParams(location.search).has("shared")) setStatus("Sign in to upload the shared files.");
     return;
   }
   filesCol = collection(db, "users", user.uid, "files");
+  let first = true;
   unsub = onSnapshot(
     query(filesCol, orderBy("createdAt", "desc")),
     (snap) => {
       files = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       render();
+      // Upload anything shared from another app, once the file list (for the quota check) is known.
+      if (first) {
+        first = false;
+        takeShared();
+      }
     },
     (err) => setStatus(`Couldn't load files: ${err.message}`, true),
   );
