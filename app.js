@@ -10,8 +10,8 @@ import {
   getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
 } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js";
 import {
-  getFirestore, collection, doc, query, orderBy, onSnapshot, setDoc, updateDoc, getDoc,
-  writeBatch, Bytes,
+  getFirestore, collection, doc, query, orderBy, onSnapshot, setDoc, updateDoc, getDoc, deleteDoc,
+  Bytes,
 } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js";
 import { VERSION } from "./version.js";
 
@@ -27,7 +27,6 @@ const CHUNK_BYTES = 1_000_000; // Firestore docs are capped at 1 MiB (1,048,576 
 const PARALLEL = 4; // chunk reads/writes in flight at once
 const QUOTA_BYTES = 1024 ** 3; // free (Spark) plan: 1 GiB of Firestore storage in total
 const THUMB_SIDE = 160;
-const DELETE_BATCH = 400; // a write batch holds at most 500 operations
 const SHARE_CACHE = "filedrop-share"; // filled by sw.js when a file is shared from another app
 // The Async Clipboard API only takes PNG images and plain text (Chrome), so only those can be copied.
 const TEXT_TYPE = /^text\/|^application\/(json|xml|javascript|x-sh)$/;
@@ -242,19 +241,25 @@ function copyFile(f) {
 
 async function deleteFile(f) {
   if (!confirm(`Delete ${f.name}?`)) return;
+  const job = { label: "Deleting", done: 0, total: f.size };
+  active.set(f.id, job);
+  render();
   try {
+    // One delete per chunk: a write batch is capped at 10 MiB *including the size of deleted
+    // docs*, so batching 1 MB chunks fails for files over ~10 MB ("Transaction too big").
     // Chunks first, the file doc last, so a failure part-way still leaves a deletable entry.
-    for (let start = 0; start < f.chunks; start += DELETE_BATCH) {
-      const batch = writeBatch(db);
-      for (let i = start; i < Math.min(f.chunks, start + DELETE_BATCH); i++) batch.delete(chunkRef(f.id, i));
-      await batch.commit();
-    }
-    const batch = writeBatch(db);
-    batch.delete(doc(filesCol, f.id));
-    await batch.commit();
+    await pool(PARALLEL * 2, f.chunks, async (i) => {
+      await deleteDoc(chunkRef(f.id, i));
+      job.done = Math.min(f.size, job.done + CHUNK_BYTES);
+      render();
+    });
+    await deleteDoc(doc(filesCol, f.id));
     blobs.delete(f.id);
   } catch (err) {
     setStatus(`Couldn't delete ${f.name}: ${err.message}`, true);
+  } finally {
+    active.delete(f.id);
+    render();
   }
 }
 
