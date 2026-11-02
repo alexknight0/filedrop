@@ -15,7 +15,7 @@
 // for everyone (deleteFile also deletes the recipients' inbox entries).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
 import {
-  getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
+  initializeAuth, browserLocalPersistence, browserPopupRedirectResolver, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut,
 } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js";
 import {
   getFirestore, collection, doc, query, orderBy, onSnapshot, setDoc, updateDoc, getDoc, getDocs,
@@ -40,7 +40,10 @@ const SHARE_CACHE = "filedrop-share"; // filled by sw.js when a file is shared f
 const TEXT_TYPE = /^text\/|^application\/(json|xml|javascript|x-sh)$/;
 
 const app = initializeApp(FIREBASE_CONFIG);
-const auth = getAuth(app);
+// Sign-in is kept in localStorage, not Firebase's default IndexedDB: all of Alex's sites share
+// one origin and so one sign-in database, and Firebase waits forever if another site's page
+// blocks opening it (seen on Android 2026-11-02: blank page until site data was cleared).
+const auth = initializeAuth(app, { persistence: browserLocalPersistence, popupRedirectResolver: browserPopupRedirectResolver });
 // Default in-memory cache on purpose: a persistent cache would copy every chunk into IndexedDB.
 const db = getFirestore(app);
 
