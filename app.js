@@ -524,6 +524,8 @@ onAuthStateChanged(auth, async (user) => {
   blobs.clear();
   setStatus("");
   showSignedIn(user, false);
+  $("boot").hidden = !user;
+  $("boot-text").textContent = "Checking access…";
   if (!user) {
     // Shared while signed out: the files wait in the share cache until sign-in.
     if (new URLSearchParams(location.search).has("shared")) setStatus("Sign in to upload the shared files.");
@@ -535,12 +537,15 @@ onAuthStateChanged(auth, async (user) => {
       email: user.email.toLowerCase(), name: user.displayName || "", seenAt: Date.now(),
     });
   } catch (err) {
+    if (auth.currentUser?.uid !== user.uid) return;
+    $("boot").hidden = true;
     if (err.code !== "permission-denied") setStatus(`Couldn't sign in: ${err.message}`, true);
     $("not-approved-email").textContent = user.email;
     $("not-approved").hidden = false;
     return;
   }
   if (auth.currentUser?.uid !== user.uid) return; // signed out/switched while waiting
+  $("boot").hidden = true;
   me = user;
   showSignedIn(user, true);
   filesCol = collection(db, "users", user.uid, "files");
