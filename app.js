@@ -453,15 +453,49 @@ document.addEventListener("drop", (e) => {
   if (filesCol && list.length) uploadFiles(list);
 });
 
-document.addEventListener("paste", (e) => {
-  const list = [...(e.clipboardData?.files ?? [])];
-  if (!filesCol || !list.length) return;
-  e.preventDefault();
-  // Pasted screenshots are all called "image.png"; give them a timestamped name.
+function pasteStamp() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, "0");
-  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}`;
-  uploadFiles(list.map((f) => (f.name === "image.png" ? new File([f], `Pasted ${stamp}.png`, { type: f.type }) : f)));
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}`;
+}
+
+const textFile = (text) => new File([text], `Pasted ${pasteStamp()}.txt`, { type: "text/plain" });
+
+document.addEventListener("paste", (e) => {
+  if (!filesCol) return;
+  const list = [...(e.clipboardData?.files ?? [])];
+  if (list.length) {
+    e.preventDefault();
+    // Pasted screenshots are all called "image.png"; give them a timestamped name.
+    const stamp = pasteStamp();
+    uploadFiles(list.map((f) => (f.name === "image.png" ? new File([f], `Pasted ${stamp}.png`, { type: f.type }) : f)));
+    return;
+  }
+  // Plain text becomes a .txt file, unless it's being pasted into a text field.
+  if (e.target.closest?.("input, textarea, [contenteditable]")) return;
+  const text = e.clipboardData?.getData("text/plain");
+  if (!text) return;
+  e.preventDefault();
+  uploadFiles([textFile(text)]);
+});
+
+// Phone "Paste" button: upload the clipboard's text as a .txt file. Chrome asks for clipboard
+// permission (or shows its own "Paste" bubble) the first time.
+$("paste-btn").addEventListener("click", async () => {
+  if (!filesCol) return;
+  let text;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch (err) {
+    console.warn("clipboard:", err);
+    setStatus("Couldn't read the clipboard (permission denied?).", true);
+    return;
+  }
+  if (!text) {
+    setStatus("There's no text on the clipboard.", true);
+    return;
+  }
+  uploadFiles([textFile(text)]);
 });
 
 window.addEventListener("beforeunload", (e) => {

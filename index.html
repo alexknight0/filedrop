@@ -45,9 +45,11 @@
              entries (it only does when images/video are accepted) and still allows any file type
              (Chromium SelectFileDialog.java). Phone only; on a Mac it could filter the dialog. -->
         <label class="pick touch-only"><input type="file" accept="application/octet-stream" multiple>Files</label>
+        <!-- Uploads the clipboard's text as a .txt (on a laptop, Ctrl/Cmd+V does that). -->
+        <button id="paste-btn" type="button" class="pick touch-only">Paste</button>
         <label class="pick desk-only"><input id="picker" type="file" multiple>Choose files to upload</label>
       </div>
-      <span class="hint desk-only">or drop / paste them anywhere on the page</span>
+      <span class="hint desk-only">or drop / paste files or text anywhere on the page</span>
     </div>
     <p id="usage" class="muted"></p>
     <section id="inbox-section" hidden>

@@ -91,6 +91,8 @@ button:disabled { opacity: 0.5; cursor: default; }
   font-size: 1.05rem;
   cursor: pointer;
   user-select: none;
+  border: none;
+  font-family: inherit;
 }
 .pick:active { filter: brightness(0.9); }
 /* Mouse/trackpad: one wide "Choose files" button. */
