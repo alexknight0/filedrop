@@ -460,15 +460,31 @@ function renderFile(f) {
   }
   const bar = job ? el("progress", { max: job.total || 1, value: job.done }) : null;
 
+  // Every row gets the same buttons so they line up. One that can't be used for this file is
+  // greyed out (aria-disabled, so it can still be tapped) and tapping it says why.
   const actions = el("div", { className: "actions" });
-  if (f.done && !job) {
-    actions.append(button("Download", () => withBlob(f, "download", (b) => saveBlob(f, b)), "small primary"));
-    if (canCopy(f)) actions.append(button("Copy", () => copyFile(f)));
-    else actions.append(el("span", { className: "slot" })); // keeps the laptop's button columns lined up
-    if (canShareFiles()) actions.append(button("Share", () => withBlob(f, "share", (b) => shareBlob(f, b))));
-    if (!f.inbox) actions.append(button("Send", () => openSend(f)));
+  const offButton = (text, why) => {
+    const b = button(text, () => setStatus(why), "small off");
+    b.setAttribute("aria-disabled", "true");
+    b.title = why;
+    return b;
+  };
+  const unfinished = "That file hasn't finished uploading.";
+  if (!job) {
+    actions.append(f.done
+      ? button("Download", () => withBlob(f, "download", (b) => saveBlob(f, b)), "small primary")
+      : offButton("Download", unfinished));
+    if (!f.done) actions.append(offButton("Copy", unfinished));
+    else if (canCopy(f)) actions.append(button("Copy", () => copyFile(f)));
+    else actions.append(offButton("Copy", isImage(f) || isText(f)
+      ? "This browser can't copy files to the clipboard." : "Only images and text can be copied."));
+    if (canShareFiles()) {
+      actions.append(f.done ? button("Share", () => withBlob(f, "share", (b) => shareBlob(f, b))) : offButton("Share", unfinished));
+    }
+    if (f.inbox) actions.append(offButton("Send", `Only ${f.fromName} can send this file on.`));
+    else actions.append(f.done ? button("Send", () => openSend(f)) : offButton("Send", unfinished));
+    actions.append(button(f.inbox ? "Remove" : "Delete", () => deleteFile(f), "small del"));
   }
-  if (!job) actions.append(button(f.inbox ? "Remove" : "Delete", () => deleteFile(f), "small del"));
 
   return el("li", { className: "file" }, thumb, el("div", { className: "info" },
     el("div", { className: "name", textContent: f.name }), meta, bar), actions);
