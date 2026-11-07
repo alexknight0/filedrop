@@ -44,6 +44,7 @@ GCLOUD_PLACES = ["~/google-cloud-sdk/bin/gcloud", "/opt/homebrew/bin/gcloud", "/
 mimetypes.add_type("image/heic", ".heic")
 mimetypes.add_type("image/heif", ".heif")
 mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("text/markdown", ".md")
 
 
 class Failed(Exception):
@@ -194,11 +195,46 @@ def upload(db, uid, path, index, total):
     db.put(doc, fields)
 
 
-def main(paths):
+def log_args(paths):
+    # Records what Shortcuts passed, to debug inputs the script can't read.
+    log = os.path.expanduser("~/.tmp/filedrop-mac/last-run.log")
+    os.makedirs(os.path.dirname(log), exist_ok=True)
+    with open(log, "w") as f:
+        f.write(f"cwd={os.getcwd()!r}\n")
+        for p in paths:
+            try:
+                st = os.stat(p)
+                info = f"mode={oct(st.st_mode)} size={st.st_size}"
+            except OSError as err:
+                info = f"stat error: {err}"
+            f.write(f"{p!r}: {info}\n")
+
+
+def to_paths(args):
+    """Finder's Share menu passes file reference URLs (file:///.file/id=…), not paths.
+    Foundation's NSURL resolves those (and plain file:// URLs) to the real path."""
+    urls = [a for a in args if a.startswith("file://")]
+    if not urls:
+        return args
+    res = subprocess.run(
+        ["osascript", "-l", "JavaScript", "-e",
+         "function run(a){return a.map(s=>{const u=$.NSURL.URLWithString(s);"
+         "const p=u.isNil()?null:u.filePathURL;return p&&!p.isNil()?p.path.js:''}).join('\\n')}", *urls],
+        capture_output=True, text=True,
+    )
+    resolved = dict(zip(urls, res.stdout.rstrip("\n").split("\n"))) if res.returncode == 0 else {}
+    return [resolved.get(a) or a for a in args]
+
+
+def main(args):
+    log_args(args)
+    paths = to_paths(args)
     files = [p for p in paths if os.path.isfile(p)]
-    skipped = [os.path.basename(p.rstrip("/")) for p in paths if not os.path.isfile(p)]
+    folders = [os.path.basename(p.rstrip("/")) for p in paths if os.path.isdir(p)]
+    unreadable = [p for p in paths if not os.path.isfile(p) and not os.path.isdir(p)]
+    skipped = folders + [f"can't read {p}" for p in unreadable]
     if not files:
-        raise Failed("Nothing to upload" + (f" (folders aren't supported: {', '.join(skipped)})" if skipped else "."))
+        raise Failed("Nothing to upload" + (f" ({'; '.join(skipped)})" if skipped else "."))
     db = Firestore()
     uid = find_uid(db)
     used = used_bytes(db, uid)
@@ -222,7 +258,7 @@ def main(paths):
     if too_big:
         parts.append(f"{', '.join(too_big)} won't fit in the 1 GB free storage")
     if skipped:
-        parts.append(f"skipped folders: {', '.join(skipped)}")
+        parts.append(f"skipped {', '.join(skipped)}")
     message = "; ".join(parts) + "."
     print(message)
     notify(message)

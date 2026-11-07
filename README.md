@@ -38,6 +38,19 @@ away, marked as from "Mac". Folders are skipped, and the 1 GB storage limit is c
 If **File drop** doesn't show in the Share menu, open the shortcut in Shortcuts, click the ⓘ
 (Details) button and tick **Use as Quick Action → Finder** and **Show in Share Sheet**.
 
+### Hotkey with Raycast
+
+[`mac/raycast-filedrop.sh`](mac/raycast-filedrop.sh) is a Raycast Script Command that uploads
+whatever is selected in Finder.
+
+1. Link it into a Raycast script folder:
+   `ln -s ~/projects/filedrop/mac/raycast-filedrop.sh ~/.config/raycast/scripts/`
+   (if Raycast doesn't use that folder yet, add it in **Raycast Settings → Extensions → + →
+   Add Script Directory**).
+2. In **Raycast Settings → Extensions**, find **Upload to File drop** and record a hotkey.
+3. Select files in Finder and press the hotkey. The first time, macOS asks whether Raycast may
+   control Finder. Allow it.
+
 ### Making the Shortcut by hand
 
 If the `.shortcut` file won't import, make a new shortcut called **File drop** with:
