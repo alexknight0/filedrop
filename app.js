@@ -464,6 +464,7 @@ function renderFile(f) {
   if (f.done && !job) {
     actions.append(button("Download", () => withBlob(f, "download", (b) => saveBlob(f, b)), "small primary"));
     if (canCopy(f)) actions.append(button("Copy", () => copyFile(f)));
+    else actions.append(el("span", { className: "slot" })); // keeps the laptop's button columns lined up
     if (canShareFiles()) actions.append(button("Share", () => withBlob(f, "share", (b) => shareBlob(f, b))));
     if (!f.inbox) actions.append(button("Send", () => openSend(f)));
   }
