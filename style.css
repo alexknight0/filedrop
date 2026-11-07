@@ -133,7 +133,9 @@ button:disabled { opacity: 0.5; cursor: default; }
   .drop { padding: 1.6rem 1rem 1.3rem; }
   .drop:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
   .drop-icon { display: grid; }
-  .pick { max-width: none; flex: none; padding: 0.55rem 1.2rem; font-size: 0.95rem; box-shadow: none; transition: filter 0.15s; }
+  /* "Choose a folder" sits under "Choose files to upload", both the same width. */
+  .pick-row { flex-direction: column; align-items: center; }
+  .pick { max-width: none; flex: none; width: 15rem; box-sizing: border-box; padding: 0.55rem 1.2rem; font-size: 0.95rem; box-shadow: none; transition: filter 0.15s; }
   .pick:hover { filter: brightness(1.1); }
   .pick.secondary { background: var(--accent-soft); color: var(--accent); }
   .pick.secondary:hover { filter: none; background: color-mix(in srgb, var(--accent) 20%, transparent); }
