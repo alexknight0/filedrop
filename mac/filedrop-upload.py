@@ -29,6 +29,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 
 PROJECT = "filedrop-da70b0"
@@ -226,31 +227,56 @@ def to_paths(args):
     return [resolved.get(a) or a for a in args]
 
 
+def zip_folder(folder, tmp):
+    """Zips a folder to tmp/<name>.zip, with the folder itself as the top level like Finder's
+    Compress. Leaves out Finder's .DS_Store files."""
+    name = os.path.basename(folder.rstrip("/")) or "folder"
+    out = os.path.join(tmp, name + ".zip")
+    parent = os.path.dirname(folder.rstrip("/"))
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for root, dirs, names in os.walk(folder):
+            dirs.sort()
+            rel_root = os.path.relpath(root, parent)
+            if not names and not dirs:
+                z.write(root, rel_root + "/")  # keep empty folders
+            for n in sorted(names):
+                if n == ".DS_Store":
+                    continue
+                full = os.path.join(root, n)
+                if os.path.isfile(full):  # skips broken symlinks, sockets, etc.
+                    z.write(full, os.path.join(rel_root, n))
+    return out
+
+
 def main(args):
     log_args(args)
     paths = to_paths(args)
-    files = [p for p in paths if os.path.isfile(p)]
-    folders = [os.path.basename(p.rstrip("/")) for p in paths if os.path.isdir(p)]
-    unreadable = [p for p in paths if not os.path.isfile(p) and not os.path.isdir(p)]
-    skipped = folders + [f"can't read {p}" for p in unreadable]
-    if not files:
+    items = [p for p in paths if os.path.isfile(p) or os.path.isdir(p)]
+    skipped = [f"can't read {p}" for p in paths if p not in items]
+    if not items:
         raise Failed("Nothing to upload" + (f" ({'; '.join(skipped)})" if skipped else "."))
     db = Firestore()
     uid = find_uid(db)
     used = used_bytes(db, uid)
     done, too_big = [], []
-    for i, path in enumerate(files, 1):
-        size = os.path.getsize(path)
-        name = os.path.basename(path)
-        if used + size > QUOTA_BYTES:
-            too_big.append(name)
-            continue
-        print(f"{i}/{len(files)}: {name} ({format_size(size)})", flush=True)
-        if size > 20 * CHUNK_BYTES:  # big uploads take a while; say it has started
-            notify(f"Uploading {name} ({format_size(size)})…")
-        upload(db, uid, path, i, len(files))
-        used += size
-        done.append(name)
+    for i, item in enumerate(items, 1):
+        with tempfile.TemporaryDirectory() as tmp:
+            if os.path.isdir(item):
+                print(f"{i}/{len(items)}: zipping {os.path.basename(item.rstrip('/'))}", flush=True)
+                path = zip_folder(item, tmp)
+            else:
+                path = item
+            size = os.path.getsize(path)
+            name = os.path.basename(path)
+            if used + size > QUOTA_BYTES:
+                too_big.append(name)
+                continue
+            print(f"{i}/{len(items)}: {name} ({format_size(size)})", flush=True)
+            if size > 20 * CHUNK_BYTES:  # big uploads take a while; say it has started
+                notify(f"Uploading {name} ({format_size(size)})…")
+            upload(db, uid, path, i, len(items))
+            used += size
+            done.append(name)
 
     parts = []
     if done:

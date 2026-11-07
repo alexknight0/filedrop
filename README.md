@@ -14,7 +14,8 @@ which uploads straight to Firestore in the same format as the site. Once it's in
 - right-click files in Finder and pick **Quick Actions → File drop**.
 
 A notification says when the upload has finished. Uploaded files show up on every device straight
-away, marked as from "Mac". Folders are skipped, and the 1 GB storage limit is checked like on the site.
+away, marked as from "Mac". Folders are uploaded as a `.zip` of the folder (like Finder's
+Compress, without `.DS_Store` files), and the 1 GB storage limit is checked like on the site.
 
 ### Requirements
 
