@@ -4,6 +4,9 @@ Move files and images between your own devices, and send them to other approved 
 
 Live site: https://alexknight0.github.io/filedrop/
 
+On a laptop you can also upload folders: drop them on the page or use **Choose a folder**.
+Each folder is zipped in the browser ([`zip.js`](zip.js)) and uploaded as `<folder>.zip`.
+
 ## Sending files from a Mac's Share menu
 
 Websites can't appear in the macOS Share menu. Chrome only supports `share_target` on Android

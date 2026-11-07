@@ -22,6 +22,7 @@ import {
   deleteDoc, arrayUnion, arrayRemove, Bytes,
 } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js";
 import { VERSION } from "./version.js";
+import { zipFolder } from "./zip.js";
 
 // Public web-app config (not a secret; access is controlled by firestore.rules).
 const FIREBASE_CONFIG = {
@@ -227,6 +228,19 @@ function previewBlob(blob) {
   $("preview").showModal();
 }
 
+// Clicking off the image closes the preview; clicking outside the Send box closes it.
+// Backdrop clicks land on the <dialog> itself, so check the click is outside its box (clicks on
+// the Send dialog's padding also target it). Keyboard "clicks" have target = the button, so they
+// never close it.
+for (const id of ["preview", "send-dialog"]) {
+  const dialog = $(id);
+  dialog.addEventListener("click", (e) => {
+    const r = dialog.getBoundingClientRect();
+    const outside = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    if (id === "preview" ? e.target !== $("preview-img") : e.target === dialog && outside) dialog.close();
+  });
+}
+
 const isImage = (f) => !!f.type?.startsWith("image/");
 const isText = (f) => TEXT_TYPE.test(f.type ?? "");
 const canCopy = (f) => !!navigator.clipboard?.write && "ClipboardItem" in window && (isImage(f) || isText(f));
@@ -426,13 +440,61 @@ function render() {
 
 // ---------- input: picker, drag and drop, paste ----------
 
-// Photos, Camera and Files buttons (index.html) each wrap their own file input.
+// Every way of adding files ends here. entries: [{path, file}], where path is the file's name, or
+// "Folder/sub/name" for something inside a chosen or dropped folder ("Folder/empty/" with
+// file: null for an empty folder). Each top-level folder is zipped into "Folder.zip".
+async function uploadEntries(entries) {
+  if (!filesCol || !entries.length) return;
+  const list = [];
+  const folders = new Map(); // folder name -> its entries
+  for (const e of entries) {
+    const slash = e.path.indexOf("/");
+    if (slash < 0) list.push(e.file);
+    else {
+      const top = e.path.slice(0, slash);
+      if (!folders.has(top)) folders.set(top, []);
+      folders.get(top).push(e);
+    }
+  }
+  for (const [name, inside] of folders) {
+    try {
+      list.push(await zipFolder(name, inside, (done, total) => setStatus(`Zipping ${name}… ${done} of ${total}`)));
+    } catch (err) {
+      setStatus(`Couldn't zip ${name}: ${err.message}`, true);
+      return;
+    }
+  }
+  await uploadFiles(list);
+}
+
+// Plain files have no webkitRelativePath; files from the folder picker do ("Folder/sub/name").
+const fileEntries = (list) => [...list].map((file) => ({ path: file.webkitRelativePath || file.name, file }));
+
+// Photos, Camera, Files and the laptop's file and folder buttons (index.html) each wrap their own input.
 for (const input of document.querySelectorAll("#drop input[type=file]")) {
   input.addEventListener("change", (e) => {
-    const list = [...e.target.files];
+    const entries = fileEntries(e.target.files);
     e.target.value = "";
-    if (filesCol) uploadFiles(list);
+    uploadEntries(entries);
   });
+}
+
+// Walks a dropped file or folder (File and Directory Entries API) into uploadEntries' format.
+async function walkEntry(entry, prefix, out) {
+  const path = prefix + entry.name;
+  if (entry.isFile) {
+    out.push({ path, file: await new Promise((res, rej) => entry.file(res, rej)) });
+    return;
+  }
+  const reader = entry.createReader();
+  const children = [];
+  for (;;) { // readEntries returns at most ~100 entries per call
+    const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+    if (!batch.length) break;
+    children.push(...batch);
+  }
+  if (!children.length) out.push({ path: path + "/", file: null });
+  for (const child of children) await walkEntry(child, path + "/", out);
 }
 
 let dragDepth = 0;
@@ -445,12 +507,22 @@ document.addEventListener("dragleave", () => {
   if (dragDepth > 0 && --dragDepth === 0) document.body.classList.remove("dragging");
 });
 document.addEventListener("dragover", (e) => e.preventDefault());
-document.addEventListener("drop", (e) => {
+document.addEventListener("drop", async (e) => {
   e.preventDefault();
   dragDepth = 0;
   document.body.classList.remove("dragging");
-  const list = [...(e.dataTransfer?.files ?? [])];
-  if (filesCol && list.length) uploadFiles(list);
+  if (!filesCol || !e.dataTransfer) return;
+  // Entries must be taken during the event; the DataTransfer is emptied once it returns.
+  const roots = [...e.dataTransfer.items].map((item) => item.webkitGetAsEntry?.()).filter(Boolean);
+  if (!roots.length) return uploadEntries(fileEntries(e.dataTransfer.files));
+  const entries = [];
+  try {
+    for (const root of roots) await walkEntry(root, "", entries);
+  } catch (err) {
+    setStatus(`Couldn't read the dropped files: ${err.message}`, true);
+    return;
+  }
+  uploadEntries(entries);
 });
 
 function pasteStamp() {

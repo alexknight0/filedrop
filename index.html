@@ -48,8 +48,10 @@
         <!-- Uploads the clipboard's text as a .txt (on a laptop, Ctrl/Cmd+V does that). -->
         <button id="paste-btn" type="button" class="pick touch-only">Paste</button>
         <label class="pick desk-only"><input id="picker" type="file" multiple>Choose files to upload</label>
+        <!-- A chosen folder is zipped and uploaded as "<folder>.zip" (zip.js). -->
+        <label class="pick desk-only"><input id="folder-picker" type="file" webkitdirectory>Choose a folder</label>
       </div>
-      <span class="hint desk-only">or drop / paste files or text anywhere on the page</span>
+      <span class="hint desk-only">or drop / paste files, folders or text anywhere on the page</span>
     </div>
     <p id="usage" class="muted"></p>
     <section id="inbox-section" hidden>
