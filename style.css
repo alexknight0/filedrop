@@ -212,8 +212,8 @@ body.dragging .drop { border-color: var(--accent); background: var(--accent-soft
 }
 .file .actions button:hover:not(:disabled) { background: color-mix(in srgb, currentColor 7%, transparent); }
 .file .actions button:focus-visible { outline-offset: -3px; }
-.file .actions .primary { background: var(--accent); color: white; border-left-color: transparent; }
-.file .actions .primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.1); }
+.file .actions .primary { background: var(--accent-soft); color: var(--accent); border-left-color: var(--line); font-weight: 600; }
+.file .actions .primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 20%, transparent); filter: none; }
 .file .actions .del { color: var(--danger); }
 .file .actions .del:hover:not(:disabled) { background: var(--danger-soft); }
 /* Not available for this file: faint text; tapping it says why (in #status). */
