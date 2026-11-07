@@ -228,11 +228,11 @@ function previewBlob(blob) {
   $("preview").showModal();
 }
 
-// Clicking off the image closes the preview; clicking outside the Send box closes it.
+// Clicking off the image closes the preview; clicking outside the Send or confirmation box closes it.
 // Backdrop clicks land on the <dialog> itself, so check the click is outside its box (clicks on
 // the Send dialog's padding also target it). Keyboard "clicks" have target = the button, so they
 // never close it.
-for (const id of ["preview", "send-dialog"]) {
+for (const id of ["preview", "send-dialog", "confirm"]) {
   const dialog = $(id);
   dialog.addEventListener("click", (e) => {
     const r = dialog.getBoundingClientRect();
@@ -272,10 +272,60 @@ function copyFile(f) {
   );
 }
 
+// ---------- confirmations ----------
+
+// Ticking "Don't ask again for 60 seconds" makes Delete / Remove act straight away until then.
+// Kept in memory only, so a reload always asks again.
+const SKIP_MS = 60_000;
+let skipUntil = 0;
+let skipTimer = null;
+
+function updateSkipChip() {
+  const left = Math.ceil((skipUntil - Date.now()) / 1000);
+  $("skip-chip").hidden = left <= 0;
+  if (left <= 0) {
+    clearInterval(skipTimer);
+    skipTimer = null;
+    return;
+  }
+  $("skip-text").textContent = `Deleting without asking · ${left}s`;
+}
+
+function startSkip() {
+  skipUntil = Date.now() + SKIP_MS;
+  clearInterval(skipTimer);
+  skipTimer = setInterval(updateSkipChip, 1000);
+  updateSkipChip();
+}
+
+$("skip-stop").onclick = () => {
+  skipUntil = 0;
+  updateSkipChip();
+};
+
+// Resolves true if the user confirms. Shows the in-page #confirm dialog instead of confirm().
+function askConfirm({ title, text, ok = "Delete" }) {
+  if (Date.now() < skipUntil) return Promise.resolve(true);
+  const dialog = $("confirm");
+  $("confirm-title").textContent = title;
+  $("confirm-text").textContent = text;
+  $("confirm-ok").textContent = ok;
+  $("confirm-skip").checked = false;
+  dialog.returnValue = "";
+  dialog.showModal();
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => {
+      const yes = dialog.returnValue === "ok";
+      if (yes && $("confirm-skip").checked) startSkip();
+      resolve(yes);
+    }, { once: true });
+  });
+}
+
 async function deleteFile(f) {
   if (f.inbox) return removeReceived(f);
   const shared = f.sharedWith?.length ? ` It will also disappear for the ${f.sharedWith.length === 1 ? "person" : `${f.sharedWith.length} people`} you sent it to.` : "";
-  if (!confirm(`Delete ${f.name}?${shared}`)) return;
+  if (!(await askConfirm({ title: `Delete ${f.name}?`, text: `It will be removed from all your devices.${shared}` }))) return;
   const job = { label: "Deleting", done: 0, total: f.size };
   active.set(f.key, job);
   render();
@@ -301,7 +351,7 @@ async function deleteFile(f) {
 }
 
 async function removeReceived(f) {
-  if (!confirm(`Remove ${f.name} from your list? ${f.fromName} keeps their copy.`)) return;
+  if (!(await askConfirm({ title: `Remove ${f.name}?`, text: `It goes from your list only. ${f.fromName} keeps their copy.`, ok: "Remove" }))) return;
   try {
     await deleteDoc(doc(db, "users", me.uid, "inbox", f.id));
     blobs.delete(f.key);
@@ -434,7 +484,10 @@ function render() {
     $("inbox").replaceChildren(...inbox.map(renderFile));
     $("inbox-section").hidden = inbox.length === 0;
     $("empty").hidden = files.length > 0;
-    $("usage").textContent = `You're using ${formatSize(usedBytes())} of the 1 GB free storage`;
+    const used = usedBytes();
+    $("usage").textContent = `You have used ${formatSize(used)} of 1 GB shared storage`;
+    $("usage-meter").querySelector("i").style.width = `${Math.min(100, (used / QUOTA_BYTES) * 100)}%`;
+    $("usage-meter").classList.toggle("full", used > QUOTA_BYTES * 0.9);
   });
 }
 

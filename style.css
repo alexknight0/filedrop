@@ -1,30 +1,49 @@
 :root {
   color-scheme: light dark;
-  font-family: system-ui, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   --accent: #1f6feb;
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
   --danger: #d33;
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, transparent);
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --text: #1c2128;
   --muted: color-mix(in srgb, currentColor 60%, transparent);
-  --line: color-mix(in srgb, currentColor 18%, transparent);
+  --line: color-mix(in srgb, currentColor 13%, transparent);
   --card: color-mix(in srgb, currentColor 5%, transparent);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 16px rgb(0 0 0 / 0.05);
+  --radius: 0.9rem;
   --pad: 1rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --text: #e6edf3;
+    --accent-soft: color-mix(in srgb, var(--accent) 22%, transparent);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 16px rgb(0 0 0 / 0.25);
+  }
 }
 
 [hidden] { display: none !important; }
 
+html { background: var(--bg); color: var(--text); }
 body {
   max-width: 48rem;
   margin: 0 auto;
   padding: var(--pad);
   padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+  -webkit-font-smoothing: antialiased;
 }
 
-header { display: flex; align-items: center; gap: 0.5rem; }
-h1 { margin: 0; font-size: 1.5rem; white-space: nowrap; }
+header { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0 0.5rem; }
+.logo { width: 1.9rem; height: 1.9rem; border-radius: 0.5rem; flex: none; box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 35%, transparent); }
+h1 { margin: 0; font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
 #account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; min-width: 0; }
 #user-email { color: var(--muted); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 520px) { #user-email { display: none; } }
 
-#status { min-height: 1.2em; margin: 0.4rem 0; font-size: 0.9rem; color: var(--muted); }
+#status { min-height: 1.2em; margin: 0.3rem 0 0.6rem; font-size: 0.9rem; color: var(--muted); }
 
 /* Version indicator next to the title: green dot = latest, orange "Update" = stale copy,
    hollow grey = couldn't check (offline) or still checking. */
@@ -37,6 +56,7 @@ h1 { margin: 0; font-size: 1.5rem; white-space: nowrap; }
   background: none;
   font-size: 0.8rem;
 }
+.version:hover { background: none; }
 .version i {
   width: 0.6rem;
   height: 0.6rem;
@@ -56,14 +76,21 @@ h1 { margin: 0; font-size: 1.5rem; white-space: nowrap; }
 button {
   font: inherit;
   padding: 0.5rem 0.9rem;
-  border-radius: 0.5rem;
+  border-radius: 0.55rem;
   border: 1px solid var(--line);
-  background: var(--card);
+  background: var(--surface);
   color: inherit;
   cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, filter 0.15s, transform 0.05s;
 }
-button.small { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
-button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+button:hover:not(:disabled) { background: color-mix(in srgb, currentColor 6%, var(--surface)); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button:focus-visible, .pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.small { padding: 0.32rem 0.7rem; font-size: 0.85rem; }
+button.primary { background: var(--accent); border-color: var(--accent); color: white; font-weight: 500; }
+button.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.1); }
+button.danger { background: var(--danger); border-color: var(--danger); color: white; font-weight: 500; }
+button.danger:hover:not(:disabled) { background: var(--danger); filter: brightness(1.1); }
 button:disabled { opacity: 0.5; cursor: default; }
 
 /* Upload area. Each button is a <label> wrapping a hidden file input. */
@@ -71,12 +98,16 @@ button:disabled { opacity: 0.5; cursor: default; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   padding: 1rem;
-  border: 2px dashed var(--line);
-  border-radius: 0.8rem;
+  border: 2px dashed color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: var(--radius);
+  background: var(--surface);
   text-align: center;
+  transition: border-color 0.15s, background-color 0.15s;
 }
+.drop-icon { display: none; width: 2.6rem; height: 2.6rem; border-radius: 50%; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.drop-icon svg { width: 1.3rem; height: 1.3rem; }
 .drop .hint { color: var(--muted); font-size: 0.85rem; }
 .drop input { display: none; }
 .pick-row { display: flex; gap: 0.5rem; width: 100%; justify-content: center; }
@@ -84,7 +115,7 @@ button:disabled { opacity: 0.5; cursor: default; }
   flex: 1;
   max-width: 10rem;
   padding: 0.9rem 0.5rem;
-  border-radius: 0.6rem;
+  border-radius: 0.7rem;
   background: var(--accent);
   color: white;
   font-weight: 600;
@@ -93,80 +124,148 @@ button:disabled { opacity: 0.5; cursor: default; }
   user-select: none;
   border: none;
   font-family: inherit;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .pick:active { filter: brightness(0.9); }
-/* Mouse/trackpad: one wide "Choose files" button. */
+/* Mouse/trackpad: file and folder buttons side by side, with an icon above. */
 @media (pointer: fine) {
   .touch-only { display: none; }
-  .pick { max-width: none; flex: none; padding: 0.8rem 1.6rem; background: none; color: var(--accent); font-size: 1.1rem; }
-  .drop { padding: 1.4rem 1rem; }
+  .drop { padding: 1.6rem 1rem 1.3rem; }
+  .drop:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
+  .drop-icon { display: grid; }
+  .pick { max-width: none; flex: none; padding: 0.55rem 1.2rem; font-size: 0.95rem; box-shadow: none; transition: filter 0.15s; }
+  .pick:hover { filter: brightness(1.1); }
+  .pick.secondary { background: var(--accent-soft); color: var(--accent); }
+  .pick.secondary:hover { filter: none; background: color-mix(in srgb, var(--accent) 20%, transparent); }
 }
 @media not (pointer: fine) {
   .desk-only { display: none; }
+  /* Nothing to drop onto on a phone, so no dashed box: just the buttons. */
+  .drop { border: none; background: none; padding: 0.25rem 0 0; }
 }
-body.dragging .drop { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+body.dragging .drop { border-color: var(--accent); background: var(--accent-soft); }
 
-#files { list-style: none; padding: 0; margin: 0; }
+/* Storage line with a thin meter. */
+.usage { margin: 0.9rem 0.2rem 0.5rem; font-size: 0.85rem; color: var(--muted); }
+.meter { height: 0.3rem; margin-top: 0.35rem; border-radius: 99px; background: var(--line); overflow: hidden; }
+.meter > i { display: block; height: 100%; min-width: 2px; border-radius: inherit; background: var(--accent); transition: width 0.3s; }
+.meter.full > i { background: var(--danger); }
+
+/* File lists are cards of rows. */
+#files, #inbox {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+#files:empty, #inbox:empty { display: none; }
 .file {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.6rem 0;
+  gap: 0.8rem;
+  padding: 0.65rem 0.8rem;
   border-bottom: 1px solid var(--line);
+  transition: background-color 0.15s;
 }
+.file:last-child { border-bottom: none; }
+@media (hover: hover) { .file:hover { background: color-mix(in srgb, currentColor 3%, transparent); } }
 .thumb {
   flex: none;
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: 0.4rem;
-  background: var(--card);
-  border: 1px solid var(--line);
+  width: 3.2rem;
+  height: 3.2rem;
+  border-radius: 0.6rem;
+  background: var(--accent-soft);
+  border: none;
   display: grid;
   place-items: center;
   overflow: hidden;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--accent);
   text-transform: uppercase;
   padding: 0;
 }
+.thumb:hover:not(:disabled) { background: var(--accent-soft); filter: brightness(0.95); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
 .info { flex: 1; min-width: 0; }
-.name { overflow-wrap: anywhere; }
+.name { overflow-wrap: anywhere; font-weight: 500; }
 .meta { color: var(--muted); font-size: 0.8rem; margin-top: 0.15rem; }
 .meta.error { color: var(--danger); }
 .actions { flex: none; display: flex; gap: 0.35rem; }
-.actions .del { color: var(--danger); }
-progress { width: 100%; height: 0.4rem; margin-top: 0.3rem; accent-color: var(--accent); }
+.actions button:not(.primary) { background: none; }
+.actions button:not(.primary):hover:not(:disabled) { background: color-mix(in srgb, currentColor 7%, transparent); }
+.actions .del { color: var(--danger); border-color: transparent; }
+.actions .del:hover:not(:disabled) { background: var(--danger-soft) !important; }
+progress { width: 100%; height: 0.35rem; margin-top: 0.35rem; accent-color: var(--accent); border-radius: 99px; }
 @media (max-width: 520px) {
   .file { flex-wrap: wrap; }
   .actions { width: 100%; justify-content: flex-end; }
 }
 
-#preview { padding: 0; border: none; background: transparent; max-width: 95vw; max-height: 95vh; }
-#preview::backdrop { background: rgb(0 0 0 / 0.8); }
-#preview img { display: block; max-width: 95vw; max-height: 90vh; object-fit: contain; }
+#preview { padding: 0; border: none; background: transparent; max-width: 95vw; max-height: 95vh; overflow: visible; }
+#preview::backdrop { background: rgb(0 0 0 / 0.85); backdrop-filter: blur(4px); }
+#preview img { display: block; max-width: 95vw; max-height: 90vh; object-fit: contain; border-radius: 0.5rem; box-shadow: 0 10px 40px rgb(0 0 0 / 0.5); }
 #preview form { position: absolute; top: 0.5rem; right: 0.5rem; }
-#preview .close { background: rgb(0 0 0 / 0.6); color: white; border: none; }
+#preview .close { width: 2.2rem; height: 2.2rem; padding: 0; border-radius: 50%; background: rgb(0 0 0 / 0.6); color: white; border: none; }
+#preview .close:hover { background: rgb(0 0 0 / 0.8); }
 
 /* "Sent to you" / "Your files" headings, only shown when something has been sent to you. */
-h2 { font-size: 0.95rem; color: var(--muted); margin: 1rem 0 0.2rem; }
-#inbox { list-style: none; padding: 0; margin: 0; }
+h2 { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 1.2rem 0.2rem 0.45rem; }
+#inbox-section h2:last-child { margin-top: 1.4rem; }
 
-/* Send dialog. */
+/* Dialogs (Send, confirmations). */
 .sheet {
-  width: min(28rem, 92vw);
+  box-sizing: border-box;
+  width: min(26rem, 92vw);
   border: 1px solid var(--line);
-  border-radius: 0.8rem;
-  padding: 1rem;
-  color: inherit;
-  background: Canvas;
+  border-radius: 1rem;
+  padding: 1.2rem;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 20px 50px rgb(0 0 0 / 0.25);
 }
-.sheet::backdrop { background: rgb(0 0 0 / 0.5); }
-.sheet h3 { margin: 0 0 0.3rem; overflow-wrap: anywhere; }
-.sheet form[method="dialog"] { display: flex; justify-content: flex-end; margin-top: 0.8rem; }
-.people { list-style: none; padding: 0; margin: 0.5rem 0 0; max-height: 50vh; overflow-y: auto; }
-.person { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+.sheet[open] { animation: pop 0.16s ease-out; }
+@keyframes pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } }
+.sheet::backdrop { background: rgb(0 0 0 / 0.45); backdrop-filter: blur(2px); }
+.sheet h3 { margin: 0 0 0.35rem; font-size: 1.1rem; overflow-wrap: anywhere; }
+.sheet p { margin: 0; line-height: 1.4; }
+#send-dialog form, .confirm-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.1rem; }
+.people { list-style: none; padding: 0; margin: 0.7rem 0 0; max-height: 50vh; overflow-y: auto; }
+.person { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+.person:last-child { border-bottom: none; }
+
+/* Confirmation dialog: icon, title, text, optional "don't ask for 60 s", Cancel / action. */
+.confirm { text-align: left; }
+.confirm-icon { width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; margin-bottom: 0.8rem; background: var(--danger-soft); color: var(--danger); }
+.confirm-icon svg { width: 1.25rem; height: 1.25rem; }
+.check { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.9rem; font-size: 0.88rem; color: var(--muted); cursor: pointer; user-select: none; }
+.check input { width: 1rem; height: 1rem; margin: 0; accent-color: var(--accent); }
+
+/* Shown while deletions don't ask (the 60 s after ticking "Don't ask again"). */
+.skip-chip {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.45rem 0.5rem 0.45rem 0.95rem;
+  border-radius: 99px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.85rem;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+  white-space: nowrap;
+  z-index: 10;
+}
+.skip-chip button { padding: 0.25rem 0.7rem; border-radius: 99px; border: none; font-size: 0.82rem; background: color-mix(in srgb, var(--bg) 22%, transparent); color: inherit; }
+.skip-chip button:hover:not(:disabled) { background: color-mix(in srgb, var(--bg) 32%, transparent); }
 
 /* Home link (house) to /home/, on every device: in an installed app Android opens the
    installed Home app. Bigger tap area on touch screens without changing the layout. */

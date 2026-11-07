@@ -13,6 +13,7 @@
 <body>
   <header>
     <a class="home-link" href="../home/" aria-label="Home page (all sites)" title="Home page (all sites)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 9.5V20h5v-5.5h3V20h5V9.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+    <img class="logo" src="icon.svg" alt="">
     <h1>File drop</h1>
     <button id="version" type="button" class="version" data-state="checking" aria-label="Checking for updates…" title="Checking for updates…"><i></i><span></span></button>
     <div id="account">
@@ -38,6 +39,7 @@
          just "Choose files". accept="image/*,video/*" opens Android's photo picker directly, and
          capture opens the camera app directly. -->
     <div id="drop" class="drop">
+      <span class="drop-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
       <div class="pick-row">
         <label class="pick touch-only"><input type="file" accept="image/*,video/*" multiple>Photos</label>
         <label class="pick touch-only"><input type="file" accept="image/*" capture="environment">Camera</label>
@@ -49,11 +51,11 @@
         <button id="paste-btn" type="button" class="pick touch-only">Paste</button>
         <label class="pick desk-only"><input id="picker" type="file" multiple>Choose files to upload</label>
         <!-- A chosen folder is zipped and uploaded as "<folder>.zip" (zip.js). -->
-        <label class="pick desk-only"><input id="folder-picker" type="file" webkitdirectory>Choose a folder</label>
+        <label class="pick desk-only secondary"><input id="folder-picker" type="file" webkitdirectory>Choose a folder</label>
       </div>
       <span class="hint desk-only">or drop / paste files, folders or text anywhere on the page</span>
     </div>
-    <p id="usage" class="muted"></p>
+    <div class="usage"><span id="usage"></span><div id="usage-meter" class="meter"><i></i></div></div>
     <section id="inbox-section" hidden>
       <h2>Sent to you</h2>
       <ul id="inbox"></ul>
@@ -69,6 +71,24 @@
     <ul id="send-list" class="people"></ul>
     <form method="dialog"><button class="small">Done</button></form>
   </dialog>
+
+  <!-- Confirmation for Delete / Remove (askConfirm in app.js). The checkbox turns the question off
+       for 60 s so many files can be deleted in a row; #skip-chip shows the countdown meanwhile. -->
+  <dialog id="confirm" class="sheet confirm">
+    <form method="dialog">
+      <div class="confirm-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <h3 id="confirm-title"></h3>
+      <p id="confirm-text" class="muted"></p>
+      <label class="check"><input id="confirm-skip" type="checkbox">Don't ask again for 60 seconds</label>
+      <div class="confirm-buttons">
+        <button value="cancel" autofocus>Cancel</button>
+        <button id="confirm-ok" value="ok" class="danger">Delete</button>
+      </div>
+    </form>
+  </dialog>
+  <div id="skip-chip" class="skip-chip" role="status" hidden>
+    <span id="skip-text"></span><button id="skip-stop" type="button">Ask again</button>
+  </div>
 
   <dialog id="preview">
     <form method="dialog"><button class="close" aria-label="Close">✕</button></form>
