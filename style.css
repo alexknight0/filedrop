@@ -290,6 +290,25 @@ h2 { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spa
 .skip-chip button { padding: 0.25rem 0.7rem; border-radius: 99px; border: none; font-size: 0.82rem; background: color-mix(in srgb, var(--bg) 22%, transparent); color: inherit; }
 .skip-chip button:hover:not(:disabled) { background: color-mix(in srgb, var(--bg) 32%, transparent); }
 
+/* Share menu (popover): Send / Share to another app. */
+.menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 0.3rem;
+  min-width: 13rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.2);
+}
+.menu:popover-open { display: flex; flex-direction: column; animation: pop 0.12s ease-out; }
+.menu button { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; border: none; background: none; padding: 0.6rem 0.75rem; border-radius: 0.55rem; text-align: left; }
+.menu button b { font-weight: 600; font-size: 0.95rem; }
+.menu button span { font-size: 0.8rem; color: var(--muted); }
+.menu button[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+
 /* Home link (house) to /home/, on every device: in an installed app Android opens the
    installed Home app. Bigger tap area on touch screens without changing the layout. */
 .home-link {

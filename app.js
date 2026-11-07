@@ -362,6 +362,35 @@ async function removeReceived(f) {
 
 // ---------- sending to other people ----------
 
+// Where the Web Share API takes files (Android), Share and Send are one "Share" button that opens
+// a small menu: Send (to someone in File drop) or Share to another app. Elsewhere it's just Send.
+let menuTarget = null;
+function openShareMenu(f, anchor) {
+  menuTarget = f;
+  const menu = $("share-menu");
+  const send = $("menu-send");
+  send.setAttribute("aria-disabled", String(!!f.inbox));
+  send.title = f.inbox ? `Only ${f.fromName} can send this file on.` : "";
+  menu.showPopover();
+  // Under the button, kept on screen.
+  const r = anchor.getBoundingClientRect();
+  const w = menu.offsetWidth;
+  const h = menu.offsetHeight;
+  menu.style.left = `${Math.max(8, Math.min(r.right - w, innerWidth - w - 8))}px`;
+  menu.style.top = `${r.bottom + h + 8 > innerHeight ? r.top - h - 4 : r.bottom + 4}px`;
+}
+$("menu-send").onclick = () => {
+  const f = menuTarget;
+  $("share-menu").hidePopover();
+  if (f.inbox) setStatus(`Only ${f.fromName} can send this file on.`);
+  else openSend(f);
+};
+$("menu-app").onclick = () => {
+  const f = menuTarget;
+  $("share-menu").hidePopover();
+  withBlob(f, "share", (b) => shareBlob(f, b));
+};
+
 let sendTarget = null; // the file the Send dialog is for
 let profiles = []; // other approved users who have signed in, [{uid, email, name}]
 
@@ -478,11 +507,10 @@ function renderFile(f) {
     else if (canCopy(f)) actions.append(button("Copy", () => copyFile(f)));
     else actions.append(offButton("Copy", isImage(f) || isText(f)
       ? "This browser can't copy files to the clipboard." : "Only images and text can be copied."));
-    if (canShareFiles()) {
-      actions.append(f.done ? button("Share", () => withBlob(f, "share", (b) => shareBlob(f, b))) : offButton("Share", unfinished));
-    }
-    if (f.inbox) actions.append(offButton("Send", `Only ${f.fromName} can send this file on.`));
-    else actions.append(f.done ? button("Send", () => openSend(f)) : offButton("Send", unfinished));
+    if (f.inbox && !canShareFiles()) actions.append(offButton("Send", `Only ${f.fromName} can send this file on.`));
+    else if (!f.done) actions.append(offButton(canShareFiles() ? "Share" : "Send", unfinished));
+    else if (canShareFiles()) actions.append(button("Share", (e) => openShareMenu(f, e.currentTarget)));
+    else actions.append(button("Send", () => openSend(f)));
     actions.append(button(f.inbox ? "Remove" : "Delete", () => deleteFile(f), "small del"));
   }
 
